@@ -42,6 +42,7 @@ def loading_animation(stop_event):
     sys.stdout.write("\r" + " " * 60 + "\r")
     sys.stdout.flush()
 
+
 def extract_json_from_text(text: str) -> dict:
     """Пытается извлечь JSON из текста"""
     # Ищем JSON с вложенными скобками
@@ -56,15 +57,16 @@ def extract_json_from_text(text: str) -> dict:
             brace_count -= 1
             if brace_count == 0 and start != -1:
                 try:
-                    return json.loads(text[start:i+1])
+                    return json.loads(text[start:i + 1])
                 except:
                     continue
 
-    # Fallback: вытаскиваем поля через регулярки
+    # Fallback: вытаскиваем поля через регулярки (обновлённые названия)
     result = {}
     patterns = {
         "error_type": r'"error_type"\s*:\s*"([^"]+)"',
-        "location": r'"location"\s*:\s*"([^"]+)"',
+        "root_cause_location": r'"root_cause_location"\s*:\s*"([^"]+)"',
+        "final_location": r'"final_location"\s*:\s*"([^"]+)"',
         "short_summary": r'"short_summary"\s*:\s*"([^"]+)"',
         "detailed_explanation": r'"detailed_explanation"\s*:\s*"([^"]+)"',
         "possible_causes": r'"possible_causes"\s*:\s*"([^"]+)"',
@@ -82,22 +84,29 @@ def extract_json_from_text(text: str) -> dict:
 
     raise ValueError("Не удалось извлечь JSON из ответа")
 
+
 def analyze_log_with_ollama(log_text: str, stop_animation) -> dict:
     """Отправляет лог ошибки в Ollama и возвращает расширенный анализ."""
 
-    prompt = f"""Ты — эксперт по анализу ошибок в коде с больким опытом. Проанализируй следующий stack trace.
+    prompt = f"""Ты — эксперт по анализу ошибок в коде. Проанализируй следующий stack trace.
+
+Обрати особое внимание на:
+1. Первое исключение (первопричина)
+2. Цепочку исключений (during handling... another exception occurred)
+3. Финальное исключение
 
 Верни ТОЛЬКО JSON. Никакого текста до или после.
 
-Формат ответа (подробный):
+Формат ответа:
 {{
-    "error_type": "тип ошибки (основное исключение)",
-    "location": "файл:строка:функция, где произошла ошибка",
+    "error_type": "тип ошибки (первопричина → финальное исключение)",
+    "root_cause_location": "файл:строка:функция, где возникла ПЕРВАЯ ошибка",
+    "final_location": "файл:строка:функция, где упало всё",
     "short_summary": "одно предложение о сути проблемы",
-    "detailed_explanation": "развёрнутое объяснение на 2-3 предложения: что именно пошло не так, в каком контексте",
+    "detailed_explanation": "развёрнутое объяснение: что пошло не так, почему это привело к цепочке ошибок",
     "possible_causes": "список из 2-3 возможных причин через запятую",
     "recommendation": "конкретные шаги по исправлению (2-3 действия)",
-    "code_hint": "пример кода или команды для исправления (если уместно)"
+    "code_hint": "пример кода или команды для исправления"
 }}
 
 Лог:
@@ -121,7 +130,8 @@ def analyze_log_with_ollama(log_text: str, stop_animation) -> dict:
         if response.status_code != 200:
             return {
                 "error_type": f"Ошибка сервера: {response.status_code}",
-                "location": "Не определено",
+                "root_cause_location": "Не определено",
+                "final_location": "Не определено",
                 "short_summary": response.text[:100],
                 "detailed_explanation": "Сервер Ollama вернул ошибку",
                 "possible_causes": "Ollama не запущен или модель не загружена",
@@ -136,11 +146,12 @@ def analyze_log_with_ollama(log_text: str, stop_animation) -> dict:
         # Заполняем недостающие поля
         default_fields = {
             "error_type": "Неизвестная ошибка",
-            "location": "Не определено",
+            "root_cause_location": "Не определено",
+            "final_location": "Не определено",
             "short_summary": "Не удалось проанализировать",
-            "detailed_explanation": "Модель не смогла разобрать лог. Возможно, он слишком сложный или нестандартный.",
-            "possible_causes": "Недостаточно данных для анализа",
-            "recommendation": "Проверьте лог вручную или упростите его",
+            "detailed_explanation": "Модель не смогла разобрать лог",
+            "possible_causes": "Недостаточно данных",
+            "recommendation": "Проверьте лог вручную",
             "code_hint": "-"
         }
 
@@ -154,24 +165,27 @@ def analyze_log_with_ollama(log_text: str, stop_animation) -> dict:
         stop_animation.set()
         return {
             "error_type": "Ошибка соединения",
-            "location": "Не определено",
+            "root_cause_location": "Не определено",
+            "final_location": "Не определено",
             "short_summary": "Не удалось подключиться к Ollama",
-            "detailed_explanation": "Сервер Ollama не запущен или недоступен. Проверьте, что он работает в фоне.",
-            "possible_causes": "Ollama не установлен, не запущен, или порт 11434 занят другим приложением",
-            "recommendation": "Запустите Ollama в отдельной консоли командой 'ollama serve'",
+            "detailed_explanation": "Сервер Ollama не запущен или недоступен",
+            "possible_causes": "Ollama не установлен, не запущен, или порт 11434 занят",
+            "recommendation": "Запустите 'ollama serve' в отдельной консоли",
             "code_hint": "ollama serve"
         }
     except Exception as e:
         stop_animation.set()
         return {
             "error_type": "Ошибка анализа",
-            "location": "Не определено",
+            "root_cause_location": "Не определено",
+            "final_location": "Не определено",
             "short_summary": str(e)[:100],
-            "detailed_explanation": "Произошла ошибка при обработке ответа от модели.",
-            "possible_causes": "Проблема с парсингом JSON или сетевым соединением",
-            "recommendation": "Попробуйте ещё раз или перезапустите Ollama",
-            "code_hint": "ollama stop llama3.2:3b && ollama run llama3.2:3b"
+            "detailed_explanation": "Произошла ошибка при обработке ответа от модели",
+            "possible_causes": "Проблема с парсингом JSON",
+            "recommendation": "Попробуйте ещё раз",
+            "code_hint": "-"
         }
+
 
 def print_result(result: dict):
     """Выводит расширенный результат анализа в консоль"""
@@ -182,8 +196,11 @@ def print_result(result: dict):
     print(f"{Colors.BOLD}📍 Тип ошибки:{Colors.END}")
     print(f"   {Colors.RED}{result.get('error_type', '?')}{Colors.END}\n")
 
-    print(f"{Colors.BOLD}📁 Локация:{Colors.END}")
-    print(f"   {Colors.YELLOW}{result.get('location', '?')}{Colors.END}\n")
+    print(f"{Colors.BOLD}🎯 Корень проблемы (первая ошибка):{Colors.END}")
+    print(f"   {Colors.YELLOW}{result.get('root_cause_location', '?')}{Colors.END}\n")
+
+    print(f"{Colors.BOLD}💥 Финальное падение:{Colors.END}")
+    print(f"   {Colors.YELLOW}{result.get('final_location', '?')}{Colors.END}\n")
 
     print(f"{Colors.BOLD}📝 Кратко:{Colors.END}")
     print(f"   {Colors.GREEN}{result.get('short_summary', '?')}{Colors.END}\n")
