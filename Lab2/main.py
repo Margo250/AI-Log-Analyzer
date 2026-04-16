@@ -1,20 +1,40 @@
-import os
-from dotenv import load_dotenv
+"""
+Smart Log Analyzer - Лаба 2
+Заглушка. Реальный вызов Ollama будет в лабе 3.
+"""
 
-load_dotenv()
+import requests
 
-API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+def check_ollama() -> bool:
+    """Проверяет, запущен ли сервер Ollama"""
+    try:
+        r = requests.get("http://localhost:11434", timeout=2)
+        return r.status_code == 200
+    except:
+        return False
+
+
+def analyze_log_stub(log_text: str) -> dict:
+    """Заглушка. Возвращает тестовый результат."""
+    return {
+        "error_type": "ConnectionError",
+        "location": "main.py, строка 24",
+        "summary": "Не удалось подключиться к серверу",
+        "possible_cause": "Проблема с сетью или DNS"
+    }
 
 
 def main():
-    print("=== Smart Log Analyzer ===\n")
+    print("\n=== Smart Log Analyzer (Лаба 2 - заглушка) ===\n")
 
-    if not API_KEY:
-        print("WARN: API-ключ не найден в .env")
+    # Проверка Ollama (просто информация)
+    if check_ollama():
+        print("[OK] Ollama сервер запущен")
     else:
-        print("OK: API-ключ найден")
+        print("[INFO] Ollama не обнаружен. Для лабы 3 запустите 'ollama serve'")
 
-    print("\nВведите лог ошибки. Для завершения ввода нажмите Enter дважды (пустая строка):\n")
+    print("\nВведите лог ошибки. Пустая строка - завершить ввод:\n")
 
     lines = []
     while True:
@@ -26,19 +46,20 @@ def main():
     log_text = "\n".join(lines)
 
     if not log_text.strip():
-        print("\nОшибка: лог не может быть пустым")
+        print("Ошибка: лог не может быть пустым")
         return
 
-    print(f"\n[Анализируем...] (получено {len(log_text)} символов)\n")
+    print(f"\n[Анализ] Получено {len(log_text)} символов\n")
 
-    # Заглушка
+    result = analyze_log_stub(log_text)
+
     print("=" * 50)
-    print("РЕЗУЛЬТАТ АНАЛИЗА (ЗАГЛУШКА)")
+    print("РЕЗУЛЬТАТ (ЗАГЛУШКА)")
     print("=" * 50)
-    print("Тип ошибки:     KeyError")
-    print("Локация:        app.py, строка 42, в функции get_user")
-    print("Суть:           В словаре data отсутствует ключ 'user_id'")
-    print("Причина:        API вернул ответ без поля user_id")
+    print(f"Тип ошибки:  {result['error_type']}")
+    print(f"Локация:     {result['location']}")
+    print(f"Суть:        {result['summary']}")
+    print(f"Причина:     {result['possible_cause']}")
     print("=" * 50)
 
 
